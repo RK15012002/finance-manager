@@ -1,0 +1,12 @@
+{
+  "appId": "com.yourname.personalfinancemanager",
+  "appName": "Personal Finance Manager",
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_icon",
+      "iconColor": "#5B8DEF"
+    }
+  }
+}
