@@ -19,6 +19,10 @@ even if the app is closed).
    ```
    npm install
    ```
+   (This now includes `@capacitor/filesystem` and `@capacitor/share`,
+   which the app needs to actually save Excel/backup files on Android —
+   without them, "Export Excel" and "Backup Data" would silently do
+   nothing, which is a bug in earlier versions of this project.)
 
 3. Add the Android platform:
    ```
@@ -29,6 +33,12 @@ even if the app is closed).
    ```
    npx cap sync
    ```
+   Run this again any time you change `www/index.html` or add a plugin
+   to `package.json`.
+
+   **If you already ran `npx cap add android` before this update:**
+   just re-run `npm install` then `npx cap sync` — no need to re-add
+   the platform.
 
 5. Open the project in Android Studio:
    ```
@@ -64,6 +74,15 @@ schedule: {
 
 Change `hour`/`minute` (24-hour format) to whatever time you'd like,
 then re-run `npx cap sync` and rebuild.
+
+## Exporting Excel / backup files on Android
+
+Tapping "Export Excel" or "Backup Data" now writes the file with the
+Filesystem plugin and opens the Android share sheet ("Save to Files",
+Google Drive, WhatsApp, etc.) so you can choose where it lands — this
+works reliably inside the app's WebView, unlike a plain browser
+download link. Pick "Save to Files" / "Drive" and choose Downloads (or
+any folder) to keep a copy on the device.
 
 ## Notes
 
