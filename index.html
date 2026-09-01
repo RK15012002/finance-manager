@@ -1243,7 +1243,71 @@ function renderNeedsWants(txns) {
    PERSONAL FINANCE MANAGER — EXCEL EXPORT / IMPORT (SheetJS)
    ============================================================ */
 
-function exportToExcel(state) {
+/* ---------- File saving (native-aware) ----------
+   In a plain desktop browser, a Blob + <a download> click works fine.
+   Inside the Android app (Capacitor WebView) that click does nothing —
+   there's no download manager listening for it — so exports silently
+   "worked" but no file ever appeared. On native platforms we instead
+   write the file with the Filesystem plugin and hand it to the Share
+   sheet so the user can save it to Downloads/Drive/etc. or send it
+   anywhere. base64Data must be a plain base64 string (no data: prefix). */
+async function saveOrShareFile(base64Data, filename, mimeType) {
+  const isNative = window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform();
+
+  if (isNative) {
+    const { Filesystem, Directory } = window.Capacitor.Plugins;
+    const { Share } = window.Capacitor.Plugins;
+    if (!Filesystem) {
+      throw new Error('Filesystem plugin not available. Run "npm install @capacitor/filesystem @capacitor/share" and "npx cap sync".');
+    }
+    const written = await Filesystem.writeFile({
+      path: filename,
+      data: base64Data,
+      directory: Directory.Cache,
+      recursive: true
+    });
+    if (Share && Share.share) {
+      await Share.share({
+        title: filename,
+        url: written.uri,
+        dialogTitle: 'Save or share ' + filename
+      });
+    } else {
+      // No Share plugin available — fall back to writing straight into
+      // the app's Documents folder so the file is at least retrievable.
+      await Filesystem.writeFile({
+        path: filename,
+        data: base64Data,
+        directory: Directory.Documents,
+        recursive: true
+      });
+      toast(`Saved to app Documents folder: ${filename}`);
+    }
+    return true;
+  }
+
+  // Browser / dev preview fallback (unchanged behavior)
+  const byteChars = atob(base64Data);
+  const byteNumbers = new Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
+  const byteArray = new Uint8Array(byteNumbers);
+  const blob = new Blob([byteArray], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  return true;
+}
+
+function utf8ToBase64(str) {
+  return btoa(unescape(encodeURIComponent(str)));
+}
+
+async function exportToExcel(state) {
   const cycle = getCurrentCycle(state);
   const txns = getCycleTransactions(state, cycle);
   const income = calculateTotalIncome(txns) || state.settings.salary;
@@ -1323,7 +1387,8 @@ function exportToExcel(state) {
   XLSX.utils.book_append_sheet(wb, wsDebt, 'Debt');
 
   const filename = `PersonalFinance_${new Date().toISOString().slice(0, 10)}.xlsx`;
-  XLSX.writeFile(wb, filename);
+  const base64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+  await saveOrShareFile(base64, filename, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   return filename;
 }
 
@@ -1402,16 +1467,16 @@ function normalizeExcelDate(v) {
 }
 
 /* ---------- JSON backup / restore (full app state) ---------- */
-function backupToJSON(state) {
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `PersonalFinance_Backup_${new Date().toISOString().slice(0, 10)}.json`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+async function backupToJSON(state) {
+  const filename = `PersonalFinance_Backup_${new Date().toISOString().slice(0, 10)}.json`;
+  try {
+    const base64 = utf8ToBase64(JSON.stringify(state, null, 2));
+    await saveOrShareFile(base64, filename, 'application/json');
+    toast(`Backup saved: ${filename}`);
+  } catch (e) {
+    console.error(e);
+    toast('Backup failed. See console for details.');
+  }
 }
 
 function restoreFromJSON(file, callback) {
@@ -2197,9 +2262,9 @@ function renderExcelPage() {
   document.getElementById('demoNotice').style.display = state.demoDataActive ? 'flex' : 'none';
 }
 
-function doExportExcel() {
+async function doExportExcel() {
   try {
-    const filename = exportToExcel(state);
+    const filename = await exportToExcel(state);
     toast(`Exported ${filename}`);
   } catch (e) {
     console.error(e);
