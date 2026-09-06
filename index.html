@@ -474,8 +474,11 @@ table.data-table td.num { text-align: right; font-weight: 600; }
     <!-- ---------------- DEBT ---------------- -->
     <section class="page" id="page-debt">
       <div class="page-header">
-        <h2>💳 Debt / Loan Tracker</h2>
-        <button class="btn-primary" id="btnAddDebt">+ Add Loan</button>
+        <h2>💳 Debt &amp; Lending Tracker</h2>
+        <button class="btn-primary" id="btnAddDebt">+ Add Loan / Lending</button>
+      </div>
+      <div class="card" id="lendSummaryCard" style="display:none;">
+        <div class="cycle-row total"><span>💸 Total Owed to You (by others)</span><strong id="totalOwedToYou"></strong></div>
       </div>
       <div class="grid grid-2" id="debtList"></div>
       <div class="card" style="margin-top:14px;">
@@ -611,17 +614,40 @@ table.data-table td.num { text-align: right; font-weight: 600; }
   <div class="modal">
     <div class="modal-head"><h3 id="debtModalTitle">Add Loan</h3><button data-close-modal>✕</button></div>
     <form id="debtForm" class="form-grid">
-      <div class="form-field full"><label>Loan Name</label><input type="text" id="debtName" required /></div>
-      <div class="form-field"><label>Original Amount (₹)</label><input type="number" id="debtOriginal" min="1" required /></div>
+      <div class="form-field full">
+        <label>Type</label>
+        <select id="debtType">
+          <option value="owe">I owe this (loan / EMI)</option>
+          <option value="lend">I lent this to someone (they owe me)</option>
+        </select>
+      </div>
+      <div class="form-field full"><label id="debtNameLabel">Loan Name</label><input type="text" id="debtName" required /></div>
+      <div class="form-field"><label id="debtOriginalLabel">Original Amount (₹)</label><input type="number" id="debtOriginal" min="1" required /></div>
       <div class="form-field"><label>Interest Rate (% p.a., optional)</label><input type="number" id="debtInterest" min="0" step="0.01" /></div>
-      <div class="form-field"><label>EMI (₹)</label><input type="number" id="debtEmi" min="0" required /></div>
+      <div class="form-field"><label id="debtEmiLabel">EMI (₹)</label><input type="number" id="debtEmi" min="0" required /></div>
       <div class="form-field"><label>Total Tenure (months, optional)</label><input type="number" id="debtTenure" min="0" /></div>
-      <div class="form-field"><label>EMIs Already Paid</label><input type="number" id="debtPaidEmis" min="0" required /></div>
-      <div class="form-field"><label>Remaining Principal (₹, optional)</label><input type="number" id="debtRemaining" min="0" /></div>
+      <div class="form-field"><label id="debtPaidEmisLabel">EMIs Already Paid</label><input type="number" id="debtPaidEmis" min="0" required /></div>
+      <div class="form-field"><label id="debtRemainingLabel">Remaining Principal (₹, optional)</label><input type="number" id="debtRemaining" min="0" /></div>
       <div class="form-field"><label>Loan Start Date</label><input type="date" id="debtStart" /></div>
       <div class="form-field"><label>Expected Closing Date</label><input type="date" id="debtEnd" /></div>
       <p class="hint full" style="grid-column:1/-1;">Leave interest rate / remaining principal blank if unknown — the app won't guess these for you.</p>
-      <div class="btn-row"><button type="submit" class="btn-primary">Save Loan</button><button type="button" class="btn-secondary" data-close-modal>Cancel</button></div>
+      <div class="btn-row"><button type="submit" class="btn-primary">Save</button><button type="button" class="btn-secondary" data-close-modal>Cancel</button></div>
+    </form>
+  </div>
+</div>
+
+<!-- ============ DEBT PAYMENT MODAL ============ -->
+<div class="modal-backdrop" id="paymentModal">
+  <div class="modal">
+    <div class="modal-head"><h3 id="paymentModalTitle">Log Payment</h3><button data-close-modal>✕</button></div>
+    <form id="paymentForm" class="form-grid">
+      <div class="form-field"><label>Amount (₹)</label><input type="number" id="paymentAmount" min="1" required /></div>
+      <div class="form-field"><label>Date</label><input type="date" id="paymentDate" required /></div>
+      <div class="form-field full checkbox-field">
+        <label><input type="checkbox" id="paymentAlsoTxn" checked /> Also record as a transaction (<span id="paymentTxnHint">expense</span>)</label>
+      </div>
+      <p class="hint full" id="paymentCurrentRemaining" style="grid-column:1/-1;"></p>
+      <div class="btn-row"><button type="submit" class="btn-primary">Save Payment</button><button type="button" class="btn-secondary" data-close-modal>Cancel</button></div>
     </form>
   </div>
 </div>
@@ -812,6 +838,34 @@ function saveState(state) {
 
 function resetAllData() {
   localStorage.removeItem(STORAGE_KEY);
+}
+
+/* A genuinely empty state for "Reset All Data" — unlike loadState(),
+   this does NOT re-seed the sample transactions/goals/debt/salary.
+   loadState() re-seeds demo data on empty storage on purpose (that's
+   the first-run experience for a brand new install); a user-triggered
+   reset should instead leave a truly blank app. */
+function blankState(preserveTheme) {
+  return {
+    version: 2,
+    settings: {
+      salary: 0,
+      salaryDate: 1,
+      maritalStatus: 'Unmarried',
+      theme: preserveTheme || 'light',
+      currency: 'INR',
+      cycleMonth: new Date().getMonth() + 1,
+      cycleYear: new Date().getFullYear()
+    },
+    categories: JSON.parse(JSON.stringify(DEFAULT_CATEGORIES)),
+    budgets: {},
+    transactions: [],
+    goals: [],
+    debts: [],
+    quickButtons: [],
+    demoDataActive: false,
+    notificationsDismissed: []
+  };
 }
 
 function clearDemoData(state) {
@@ -1377,13 +1431,13 @@ async function exportToExcel(state) {
   XLSX.utils.book_append_sheet(wb, wsGoals, 'Goals');
 
   /* Sheet 6: Debt */
-  const debtHeader = ['Loan', 'Original Amount', 'EMI', 'Interest Rate', 'Paid EMI', 'Remaining EMI', 'Remaining Principal', 'Start Date', 'End Date'];
+  const debtHeader = ['Loan', 'Type', 'Original Amount', 'EMI', 'Interest Rate', 'Paid EMI', 'Remaining EMI', 'Remaining Principal', 'Start Date', 'End Date'];
   const debtRows = state.debts.map(d => {
     const prog = calculateDebtProgress(d);
-    return [d.name, d.originalAmount, d.emi, d.interestRate !== null ? d.interestRate / 100 : '', d.paidEmis, d.tenureMonths ? d.tenureMonths - d.paidEmis : '', prog.accurate ? prog.remainingAmount : 'Enter interest rate for accuracy', d.startDate || '', d.endDate || ''];
+    return [d.name, d.type === 'lend' ? 'Lent to someone' : 'I owe this', d.originalAmount, d.emi, d.interestRate !== null ? d.interestRate / 100 : '', d.paidEmis, d.tenureMonths ? d.tenureMonths - d.paidEmis : '', prog.accurate ? prog.remainingAmount : 'Enter interest rate for accuracy', d.startDate || '', d.endDate || ''];
   });
   const wsDebt = XLSX.utils.aoa_to_sheet([debtHeader, ...debtRows]);
-  wsDebt['!cols'] = [{ wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 20 }, { wch: 12 }, { wch: 12 }];
+  wsDebt['!cols'] = [{ wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 20 }, { wch: 12 }, { wch: 12 }];
   XLSX.utils.book_append_sheet(wb, wsDebt, 'Debt');
 
   const filename = `PersonalFinance_${new Date().toISOString().slice(0, 10)}.xlsx`;
@@ -1428,7 +1482,7 @@ function importFromExcel(file, callback) {
       if (wb.SheetNames.includes('Debt')) {
         const rows = XLSX.utils.sheet_to_json(wb.Sheets['Debt'], { defval: '' });
         result.debts = rows.filter(r => r.Loan).map(r => ({
-          id: uid('debt'), name: r.Loan, originalAmount: Number(r['Original Amount']) || 0,
+          id: uid('debt'), name: r.Loan, type: r.Type === 'Lent to someone' ? 'lend' : 'owe', originalAmount: Number(r['Original Amount']) || 0,
           emi: Number(r.EMI) || 0,
           interestRate: r['Interest Rate'] !== '' && !isNaN(r['Interest Rate']) ? Number(r['Interest Rate']) * 100 : null,
           paidEmis: Number(r['Paid EMI']) || 0, tenureMonths: null,
@@ -1582,7 +1636,7 @@ function renderDashboard() {
   const debtPay = calculateDebtPayment(txns);
   const remaining = calculateRemainingBalance(income, expenses);
   const savingsRate = calculateSavingsRate(savings, income);
-  const debtRemainingTotal = state.debts.reduce((s, d) => s + calculateDebtProgress(d).remainingAmount, 0);
+  const debtRemainingTotal = state.debts.filter(d => d.type !== 'lend').reduce((s, d) => s + calculateDebtProgress(d).remainingAmount, 0);
   const health = calculateFinancialHealthScore(state, txns, cycle);
 
   document.getElementById('cycleLabel').textContent = cycle.label;
@@ -1773,6 +1827,8 @@ function wireModals() {
 
   document.getElementById('goalForm').addEventListener('submit', onSubmitGoal);
   document.getElementById('debtForm').addEventListener('submit', onSubmitDebt);
+  document.getElementById('debtType').addEventListener('change', updateDebtModalLabels);
+  document.getElementById('paymentForm').addEventListener('submit', onSubmitPayment);
   document.getElementById('affordForm').addEventListener('submit', onSubmitAfford);
   document.getElementById('salaryDayForm').addEventListener('submit', onSubmitSalaryDay);
 }
@@ -2096,41 +2152,58 @@ function onSubmitGoal(e) {
 function renderDebtPage() {
   document.getElementById('debtList').innerHTML = state.debts.map(d => {
     const prog = calculateDebtProgress(d);
+    const isLend = d.type === 'lend';
     return `<div class="card debt-card">
       <div class="goal-head">
-        <h3>${d.name}</h3>
+        <h3>${isLend ? '💸' : '💳'} ${d.name} ${isLend ? '<span class="hint">(owes you)</span>' : ''}</h3>
         <div class="row-actions"><button data-edit-debt="${d.id}">✏️</button><button data-del-debt="${d.id}">🗑️</button></div>
       </div>
       <div class="debt-grid">
-        <div><span>Original Loan</span><strong>${fmtINR(d.originalAmount)}</strong></div>
-        <div><span>Paid</span><strong>${fmtINR(prog.paidAmount)}</strong></div>
-        <div><span>Remaining</span><strong>${fmtINR(prog.remainingAmount)}</strong></div>
-        <div><span>Monthly EMI</span><strong>${fmtINR(d.emi)}</strong></div>
+        <div><span>${isLend ? 'Amount Lent' : 'Original Loan'}</span><strong>${fmtINR(d.originalAmount)}</strong></div>
+        <div><span>${isLend ? 'Repaid' : 'Paid'}</span><strong>${fmtINR(prog.paidAmount)}</strong></div>
+        <div><span>${isLend ? 'Still Owed to You' : 'Remaining'}</span><strong>${fmtINR(prog.remainingAmount)}</strong></div>
+        <div><span>${isLend ? 'Expected Monthly' : 'Monthly EMI'}</span><strong>${fmtINR(d.emi)}</strong></div>
         <div><span>Interest Rate</span><strong>${d.interestRate !== null && d.interestRate !== '' ? d.interestRate + '%' : '—'}</strong></div>
-        <div><span>EMIs Paid</span><strong>${d.paidEmis}${d.tenureMonths ? ' / ' + d.tenureMonths : ''}</strong></div>
+        <div><span>${isLend ? 'Repayments' : 'EMIs Paid'}</span><strong>${d.paidEmis}${d.tenureMonths ? ' / ' + d.tenureMonths : ''}</strong></div>
       </div>
       <div class="goal-progress-track"><div class="goal-progress-fill" style="width:${prog.progressPct}%"></div></div>
       <div class="goal-stats"><span>Progress</span><span>${fmtPct(prog.progressPct, 0)}</span></div>
-      ${!prog.accurate ? '<p class="hint">⚠️ Enter interest rate / remaining principal for accurate calculation. Progress shown is a rough estimate based on EMIs paid.</p>' : ''}
+      ${!prog.accurate ? '<p class="hint">⚠️ Enter interest rate / remaining principal for accurate calculation. Progress shown is a rough estimate.</p>' : ''}
+      ${prog.remainingAmount > 0 ? `<button class="btn-secondary" data-log-payment="${d.id}" style="margin-top:8px;width:100%;">💰 ${isLend ? 'Log Repayment Received' : 'Log Payment'}</button>` : ''}
     </div>`;
-  }).join('') || '<p class="empty">No loans tracked yet.</p>';
+  }).join('') || '<p class="empty">No loans or lending tracked yet.</p>';
+
+  const owedToYou = state.debts.filter(d => d.type === 'lend').reduce((s, d) => s + calculateDebtProgress(d).remainingAmount, 0);
+  const lendCard = document.getElementById('lendSummaryCard');
+  if (owedToYou > 0) {
+    lendCard.style.display = '';
+    document.getElementById('totalOwedToYou').textContent = fmtINR(owedToYou);
+  } else {
+    lendCard.style.display = 'none';
+  }
 
   document.getElementById('btnAddDebt').onclick = () => openDebtModal();
   document.querySelectorAll('[data-edit-debt]').forEach(b => b.addEventListener('click', () => openDebtModal(state.debts.find(d => d.id === b.dataset.editDebt))));
   document.querySelectorAll('[data-del-debt]').forEach(b => b.addEventListener('click', () => {
-    if (!confirm('Delete this loan?')) return;
+    if (!confirm('Delete this entry?')) return;
     state.debts = state.debts.filter(d => d.id !== b.dataset.delDebt);
     persist(); renderDebtPage();
   }));
+  document.querySelectorAll('[data-log-payment]').forEach(b => b.addEventListener('click', () => {
+    const debt = state.debts.find(d => d.id === b.dataset.logPayment);
+    if (debt) openPaymentModal(debt);
+  }));
 
-  renderDebtReduction(state.debts);
+  renderDebtReduction(state.debts.filter(d => d.type !== 'lend'));
 }
 
 function openDebtModal(existing) {
   const form = document.getElementById('debtForm');
   form.reset();
   form.dataset.editId = existing ? existing.id : '';
-  document.getElementById('debtModalTitle').textContent = existing ? 'Edit Loan' : 'Add Loan';
+  document.getElementById('debtModalTitle').textContent = existing ? 'Edit Entry' : 'Add Loan / Lending';
+  document.getElementById('debtType').value = existing ? (existing.type || 'owe') : 'owe';
+  updateDebtModalLabels();
   if (existing) {
     document.getElementById('debtName').value = existing.name;
     document.getElementById('debtOriginal').value = existing.originalAmount;
@@ -2145,14 +2218,24 @@ function openDebtModal(existing) {
   document.getElementById('debtModal').classList.add('open');
 }
 
+function updateDebtModalLabels() {
+  const isLend = document.getElementById('debtType').value === 'lend';
+  document.getElementById('debtNameLabel').textContent = isLend ? 'Lent To (name)' : 'Loan Name';
+  document.getElementById('debtOriginalLabel').textContent = isLend ? 'Amount Lent (₹)' : 'Original Amount (₹)';
+  document.getElementById('debtEmiLabel').textContent = isLend ? 'Expected Monthly Repayment (₹)' : 'EMI (₹)';
+  document.getElementById('debtPaidEmisLabel').textContent = isLend ? 'Repayments Already Received' : 'EMIs Already Paid';
+  document.getElementById('debtRemainingLabel').textContent = isLend ? 'Remaining Owed to You (₹, optional)' : 'Remaining Principal (₹, optional)';
+}
+
 function onSubmitDebt(e) {
   e.preventDefault();
   const originalAmount = Number(document.getElementById('debtOriginal').value);
-  if (originalAmount <= 0) { toast('Original loan amount must be greater than zero.'); return; }
+  if (originalAmount <= 0) { toast('Amount must be greater than zero.'); return; }
   const interestVal = document.getElementById('debtInterest').value;
   const remainingVal = document.getElementById('debtRemaining').value;
   const tenureVal = document.getElementById('debtTenure').value;
   const payload = {
+    type: document.getElementById('debtType').value === 'lend' ? 'lend' : 'owe',
     name: document.getElementById('debtName').value.trim() || 'Loan',
     originalAmount,
     interestRate: interestVal === '' ? null : Number(interestVal),
@@ -2174,7 +2257,57 @@ function onSubmitDebt(e) {
   persist();
   closeAllModals();
   renderDebtPage();
-  toast('Loan saved.');
+  toast('Saved.');
+}
+
+/* ---------- Log a payment / repayment against a loan ---------- */
+function openPaymentModal(debt) {
+  const form = document.getElementById('paymentForm');
+  form.reset();
+  form.dataset.debtId = debt.id;
+  const isLend = debt.type === 'lend';
+  document.getElementById('paymentModalTitle').textContent = isLend ? `Log Repayment — ${debt.name}` : `Log Payment — ${debt.name}`;
+  document.getElementById('paymentTxnHint').textContent = isLend ? 'income' : 'expense';
+  document.getElementById('paymentDate').value = new Date().toISOString().slice(0, 10);
+  const prog = calculateDebtProgress(debt);
+  document.getElementById('paymentCurrentRemaining').textContent = isLend
+    ? `Currently owed to you: ${fmtINR(prog.remainingAmount)}`
+    : `Currently remaining on this loan: ${fmtINR(prog.remainingAmount)}`;
+  document.getElementById('paymentModal').classList.add('open');
+}
+
+function onSubmitPayment(e) {
+  e.preventDefault();
+  const debtId = e.target.dataset.debtId;
+  const debt = state.debts.find(d => d.id === debtId);
+  if (!debt) { toast('Loan not found.'); return; }
+  const amount = Number(document.getElementById('paymentAmount').value);
+  if (!amount || amount <= 0) { toast('Amount must be greater than zero.'); return; }
+  const date = document.getElementById('paymentDate').value;
+  if (!date) { toast('Please pick a valid date.'); return; }
+
+  const prog = calculateDebtProgress(debt);
+  const newRemaining = Math.max(0, prog.remainingAmount - amount);
+  debt.remainingPrincipal = newRemaining;
+  if (debt.emi > 0) {
+    debt.paidEmis = Math.round((debt.originalAmount - newRemaining) / debt.emi);
+  }
+
+  const isLend = debt.type === 'lend';
+  if (document.getElementById('paymentAlsoTxn').checked) {
+    const txn = isLend
+      ? { id: uid('txn'), date, amount, main: 'Income', sub: 'Other Income', type: 'income',
+          paymentMethod: 'Bank Transfer', description: `Repayment from ${debt.name}`, needWant: 'NEED', recurring: false, notes: '' }
+      : { id: uid('txn'), date, amount, main: 'Financial', sub: 'Loan EMI', type: 'expense',
+          paymentMethod: 'Bank Transfer', description: `Payment — ${debt.name}`, needWant: 'NEED', recurring: false, notes: '' };
+    state.transactions.push(txn);
+  }
+
+  persist();
+  closeAllModals();
+  renderDebtPage();
+  renderAll();
+  toast(newRemaining <= 0 ? `${isLend ? 'Fully repaid!' : 'Loan fully paid off!'}` : `Payment logged. ${fmtINR(newRemaining)} remaining.`);
 }
 
 /* ================================================================
@@ -2246,12 +2379,14 @@ function renderExcelPage() {
     });
   };
   document.getElementById('btnResetAll').onclick = () => {
-    if (!confirm('This will permanently delete all your data in this browser. Continue?')) return;
+    if (!confirm('This will permanently delete ALL data — transactions, goals, debts, budgets, and salary — and give you a completely blank app. This cannot be undone. Continue?')) return;
+    const keepTheme = state.settings.theme;
     resetAllData();
-    state = loadState();
+    state = blankState(keepTheme);
+    saveState(state);
     applyTheme();
     renderAll();
-    toast('All data has been reset.');
+    toast('All data has been reset. Set your salary in Settings to get started.');
   };
   document.getElementById('btnClearDemo').onclick = () => {
     if (!confirm('Remove all demo/sample transactions?')) return;
