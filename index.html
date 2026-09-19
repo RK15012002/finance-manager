@@ -249,6 +249,14 @@ table.data-table td.num { text-align: right; font-weight: 600; }
 .form-field textarea { resize: vertical; min-height: 50px; }
 .checkbox-field { flex-direction: row; align-items: center; gap: 8px; }
 
+.type-toggle { display: flex; gap: 8px; grid-column: 1 / -1; }
+.type-toggle button {
+  flex: 1; padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);
+  background: var(--surface-alt); color: var(--text); font-weight: 700; font-size: 13.5px;
+}
+.type-toggle button.active[data-type="expense"] { background: var(--danger); color: #fff; border-color: var(--danger); }
+.type-toggle button.active[data-type="income"] { background: var(--safe); color: #fff; border-color: var(--safe); }
+
 .btn-primary, .btn-secondary {
   padding: 10px 18px; border-radius: var(--radius-sm); border: none; font-weight: 700; font-size: 13.5px;
 }
@@ -285,6 +293,7 @@ table.data-table td.num { text-align: right; font-weight: 600; }
   position: fixed; right: 22px; bottom: 22px; width: 56px; height: 56px; border-radius: 50%;
   background: var(--accent); color: #fff; border: none; font-size: 24px; box-shadow: var(--shadow-md); z-index: 50;
 }
+.fab-income { bottom: 88px; background: var(--safe); font-size: 22px; }
 #toast {
   position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%) translateY(20px); opacity: 0;
   background: #1B2333; color: #fff; padding: 10px 18px; border-radius: 999px; font-size: 13px;
@@ -390,6 +399,7 @@ table.data-table td.num { text-align: right; font-weight: 600; }
 
       <div class="btn-row" style="margin-top:16px;">
         <button class="btn-primary" id="fabAddExpenseInline" onclick="document.getElementById('fabAddExpense').click()">+ Add Expense</button>
+        <button class="btn-primary" id="fabAddIncomeInline" style="background:var(--safe);" onclick="document.getElementById('fabAddIncome').click()">+ Add Income</button>
         <button class="btn-secondary" id="btnExportExcelDash">Export Excel</button>
         <button class="btn-secondary" id="btnBackupDash">Backup Data</button>
       </div>
@@ -570,26 +580,31 @@ table.data-table td.num { text-align: right; font-weight: 600; }
   </div>
 </div>
 
+<button class="fab fab-income" id="fabAddIncome" title="Add Income">💰</button>
 <button class="fab" id="fabAddExpense" title="Add Expense">+</button>
 <div id="toast"></div>
 
-<!-- ============ EXPENSE MODAL ============ -->
+<!-- ============ EXPENSE / INCOME MODAL ============ -->
 <div class="modal-backdrop" id="expenseModal">
   <div class="modal">
     <div class="modal-head"><h3 id="expenseModalTitle">Add Expense</h3><button data-close-modal>✕</button></div>
     <form id="expenseForm" class="form-grid">
+      <div class="type-toggle" id="expenseTypeToggle">
+        <button type="button" class="active" data-type="expense">➖ Expense</button>
+        <button type="button" data-type="income">➕ Income</button>
+      </div>
       <div class="form-field"><label>Date</label><input type="date" id="expenseDate" required /></div>
       <div class="form-field"><label>Amount (₹)</label><input type="number" id="expenseAmount" min="0.01" step="0.01" required /></div>
       <div class="form-field"><label>Main Category</label><select id="expenseMain" required></select></div>
       <div class="form-field"><label>Subcategory</label><select id="expenseSub" required></select></div>
       <div class="form-field"><label>Payment Method</label><select id="expensePaymentMethod"></select></div>
-      <div class="form-field"><label>Need / Want</label>
+      <div class="form-field" id="needWantField"><label>Need / Want</label>
         <select id="expenseNeedWant"><option value="NEED">NEED</option><option value="WANT">WANT</option></select>
       </div>
       <div class="form-field full"><label>Description</label><input type="text" id="expenseDescription" placeholder="e.g. Grocery run" /></div>
-      <div class="form-field full checkbox-field"><input type="checkbox" id="expenseRecurring" /><label>Recurring expense</label></div>
+      <div class="form-field full checkbox-field"><input type="checkbox" id="expenseRecurring" /><label id="expenseRecurringLabel">Recurring expense</label></div>
       <div class="form-field full"><label>Notes</label><textarea id="expenseNotes"></textarea></div>
-      <div class="btn-row"><button type="submit" class="btn-primary">Save Expense</button><button type="button" class="btn-secondary" data-close-modal>Cancel</button></div>
+      <div class="btn-row"><button type="submit" class="btn-primary" id="expenseSaveBtn">Save Expense</button><button type="button" class="btn-secondary" data-close-modal>Cancel</button></div>
     </form>
   </div>
 </div>
@@ -1612,7 +1627,11 @@ function wireGlobalActions() {
   });
   document.getElementById('cyclePrev').addEventListener('click', () => { shiftCycle(state, -1); persist(); renderAll(); });
   document.getElementById('cycleNext').addEventListener('click', () => { shiftCycle(state, 1); persist(); renderAll(); });
-  document.getElementById('fabAddExpense').addEventListener('click', () => openExpenseModal());
+  document.getElementById('fabAddExpense').addEventListener('click', () => openExpenseModal(null, 'expense'));
+  document.getElementById('fabAddIncome').addEventListener('click', () => openExpenseModal(null, 'income'));
+  document.querySelectorAll('#expenseTypeToggle button').forEach(btn => {
+    btn.addEventListener('click', () => setExpenseModalType(btn.dataset.type));
+  });
   document.getElementById('btnSalaryDay').addEventListener('click', openSalaryDayModal);
   document.getElementById('btnAfford').addEventListener('click', openAffordModal);
 }
@@ -1844,16 +1863,34 @@ function populateSubcategoryOptions() {
   sel.innerHTML = def ? Object.keys(def.subs).map(s => `<option value="${s}">${s}</option>`).join('') : '';
 }
 
-function openExpenseModal(existing) {
+function setExpenseModalType(type) {
+  const form = document.getElementById('expenseForm');
+  form.dataset.type = type;
+  const isIncome = type === 'income';
+  document.querySelectorAll('#expenseTypeToggle button').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.type === type);
+  });
+  document.getElementById('expenseMain').innerHTML = Object.keys(state.categories)
+    .filter(m => isIncome ? m === 'Income' : m !== 'Income')
+    .map(m => `<option value="${m}">${m}</option>`).join('');
+  populateSubcategoryOptions();
+  document.getElementById('needWantField').style.display = isIncome ? 'none' : '';
+  document.getElementById('expenseRecurringLabel').textContent = isIncome ? 'Recurring income' : 'Recurring expense';
+  document.getElementById('expenseSaveBtn').textContent = isIncome ? 'Save Income' : 'Save Expense';
+  const editing = form.dataset.editId;
+  document.getElementById('expenseModalTitle').textContent = editing
+    ? (isIncome ? 'Edit Income' : 'Edit Expense')
+    : (isIncome ? 'Add Income' : 'Add Expense');
+}
+
+function openExpenseModal(existing, forceType) {
   const form = document.getElementById('expenseForm');
   form.reset();
-  document.getElementById('expenseMain').innerHTML = Object.keys(state.categories)
-    .filter(m => m !== 'Income').map(m => `<option value="${m}">${m}</option>`).join('');
-  populateSubcategoryOptions();
+  form.dataset.editId = existing ? existing.id : '';
+  const type = existing ? (existing.type === 'income' ? 'income' : 'expense') : (forceType === 'income' ? 'income' : 'expense');
+  setExpenseModalType(type);
   document.getElementById('expensePaymentMethod').innerHTML = PAYMENT_METHODS.map(m => `<option value="${m}">${m}</option>`).join('');
   document.getElementById('expenseDate').value = new Date().toISOString().slice(0, 10);
-  document.getElementById('expenseModalTitle').textContent = existing ? 'Edit Expense' : 'Add Expense';
-  form.dataset.editId = existing ? existing.id : '';
   if (existing) {
     document.getElementById('expenseDate').value = existing.date;
     document.getElementById('expenseAmount').value = existing.amount;
@@ -1862,7 +1899,7 @@ function openExpenseModal(existing) {
     document.getElementById('expenseSub').value = existing.sub;
     document.getElementById('expensePaymentMethod').value = existing.paymentMethod;
     document.getElementById('expenseDescription').value = existing.description;
-    document.getElementById('expenseNeedWant').value = existing.needWant;
+    if (existing.needWant) document.getElementById('expenseNeedWant').value = existing.needWant;
     document.getElementById('expenseRecurring').checked = existing.recurring;
     document.getElementById('expenseNotes').value = existing.notes || '';
   }
@@ -1878,14 +1915,15 @@ function onSubmitExpense(e) {
   const main = document.getElementById('expenseMain').value;
   const sub = document.getElementById('expenseSub').value;
   if (!main || !sub) { toast('Please choose a category.'); return; }
+  const type = e.target.dataset.type === 'income' ? 'income' : 'expense';
 
   const editId = e.target.dataset.editId;
   const payload = {
     date, amount, main, sub,
-    type: 'expense',
+    type,
     paymentMethod: document.getElementById('expensePaymentMethod').value,
     description: document.getElementById('expenseDescription').value || sub,
-    needWant: document.getElementById('expenseNeedWant').value,
+    needWant: type === 'income' ? null : document.getElementById('expenseNeedWant').value,
     recurring: document.getElementById('expenseRecurring').checked,
     notes: document.getElementById('expenseNotes').value
   };
@@ -1900,7 +1938,7 @@ function onSubmitExpense(e) {
   persist();
   closeAllModals();
   renderAll();
-  toast('Expense saved.');
+  toast(type === 'income' ? 'Income saved.' : 'Expense saved.');
 }
 
 function deleteTransaction(id) {
@@ -1981,9 +2019,9 @@ function drawTransactionsTable() {
       <td>${t.main}</td>
       <td>${t.sub}</td>
       <td>${t.description || ''}</td>
-      <td class="num">${fmtINR(t.amount)}</td>
+      <td class="num" style="color:${t.type === 'income' ? 'var(--safe)' : 'var(--danger)'}">${t.type === 'income' ? '+' : '-'}${fmtINR(t.amount)}</td>
       <td>${t.paymentMethod}</td>
-      <td><span class="pill ${t.needWant === 'NEED' ? 'pill-need' : 'pill-want'}">${t.needWant}</span></td>
+      <td>${(t.needWant === 'NEED' || t.needWant === 'WANT') ? `<span class="pill ${t.needWant === 'NEED' ? 'pill-need' : 'pill-want'}">${t.needWant}</span>` : '—'}</td>
       <td>${t.recurring ? '🔁' : ''}</td>
       <td class="row-actions">
         <button data-edit="${t.id}" title="Edit">✏️</button>
