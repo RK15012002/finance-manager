@@ -227,7 +227,6 @@ table.data-table td.num { text-align: right; font-weight: 600; }
 .excel-action-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px; background: var(--surface-alt); border-radius: var(--radius-sm); }
 .excel-action-row strong { display: block; font-size: 14px; }
 .excel-action-row span { font-size: 12.5px; color: var(--text-muted); }
-.demo-notice { display: flex; justify-content: space-between; align-items: center; gap: 10px; background: rgba(91,141,239,0.1); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 14px; font-size: 13px; }
 
 .cat-card-head { display: flex; justify-content: space-between; align-items: center; }
 .cat-subs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
@@ -263,7 +262,8 @@ table.data-table td.num { text-align: right; font-weight: 600; }
 .btn-primary { background: var(--accent); color: #fff; }
 .btn-primary:hover { background: var(--accent-dark); }
 .btn-secondary { background: var(--surface-alt); color: var(--text); border: 1px solid var(--border); }
-.btn-row { display: flex; gap: 10px; margin-top: 6px; grid-column: 1 / -1; }
+.btn-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; grid-column: 1 / -1; }
+.btn-row button { flex: 1 1 auto; white-space: nowrap; }
 
 /* ---------- Modals ---------- */
 .modal-backdrop {
@@ -318,6 +318,7 @@ table.data-table td.num { text-align: right; font-weight: 600; }
   .form-grid { grid-template-columns: 1fr; }
   .report-grid { grid-template-columns: 1fr 1fr; }
   .page { padding: 14px 12px 40px; }
+  .btn-row button { flex: 1 1 100%; }
 }
 
 </style>
@@ -521,11 +522,6 @@ table.data-table td.num { text-align: right; font-weight: 600; }
     <section class="page" id="page-excel">
       <div class="page-header"><h2>📁 Excel &amp; Backup</h2></div>
 
-      <div class="demo-notice" id="demoNotice">
-        <span>This app is currently showing <strong>sample demo data</strong> so you can see how it works.</span>
-        <button class="btn-secondary" id="btnClearDemo">Clear Demo Data</button>
-      </div>
-
       <div class="card excel-actions">
         <div class="excel-action-row">
           <div><strong>Export to Excel (.xlsx)</strong><span>Dashboard, Transactions, Monthly Summary, Budget, Goals &amp; Debt sheets.</span></div>
@@ -727,42 +723,7 @@ function uid(prefix) {
 }
 
 function defaultState() {
-  return {
-    version: 2,
-    settings: {
-      salary: 39900,
-      salaryDate: 7,       // day of month salary is credited
-      maritalStatus: 'Unmarried',
-      theme: 'light',
-      currency: 'INR',
-      cycleMonth: new Date().getMonth() + 1,
-      cycleYear: new Date().getFullYear()
-    },
-    categories: JSON.parse(JSON.stringify(DEFAULT_CATEGORIES)),
-    budgets: buildDefaultBudgets(),
-    transactions: [],
-    goals: [
-      { id: uid('goal'), name: 'Emergency Fund', target: 100000, current: 20000, monthlyContribution: 2000, targetDate: '' },
-      { id: uid('goal'), name: 'Bike', target: 150000, current: 30000, monthlyContribution: 2000, targetDate: '' },
-      { id: uid('goal'), name: 'Travel', target: 30000, current: 5000, monthlyContribution: 1000, targetDate: '' }
-    ],
-    debts: [
-      {
-        id: uid('debt'), name: 'Personal Loan', originalAmount: 100000, interestRate: null,
-        emi: 15000, tenureMonths: null, paidEmis: 2, remainingPrincipal: null,
-        startDate: '', endDate: ''
-      }
-    ],
-    quickButtons: [
-      { label: 'Tea', amount: 20, main: 'Food', sub: 'Tea' },
-      { label: 'Snacks', amount: 50, main: 'Food', sub: 'Snacks' },
-      { label: 'Petrol', amount: 100, main: 'Transportation', sub: 'Petrol' },
-      { label: 'Food', amount: 200, main: 'Food', sub: 'Restaurant' },
-      { label: 'Shopping', amount: 500, main: 'Personal', sub: 'Shopping' }
-    ],
-    demoDataActive: true,
-    notificationsDismissed: []
-  };
+  return blankState();
 }
 
 function buildDefaultBudgets() {
@@ -775,44 +736,12 @@ function buildDefaultBudgets() {
   return b;
 }
 
-/* ---------- Demo transactions, generated relative to the
-   current salary cycle so the app feels "alive" immediately ---------- */
-function generateDemoTransactions(state) {
-  const cycle = getCurrentCycle(state);
-  const start = new Date(cycle.start);
-  const mk = (daysAfterStart, main, sub, amount, needWant, method, desc) => {
-    const d = new Date(start);
-    d.setDate(d.getDate() + daysAfterStart);
-    return {
-      id: uid('txn'), date: d.toISOString().slice(0, 10), type: 'expense',
-      main, sub, amount, paymentMethod: method || 'UPI', description: desc || sub,
-      needWant: needWant || 'NEED', recurring: false, notes: '', demo: true
-    };
-  };
-  return [
-    { id: uid('txn'), date: cycle.start, type: 'income', main: 'Income', sub: 'Salary', amount: state.settings.salary, paymentMethod: 'Bank Transfer', description: 'Monthly Salary', needWant: 'NEED', recurring: true, notes: '', demo: true },
-    mk(0, 'Housing', 'Rent', 5500, 'NEED', 'Bank Transfer', 'Monthly rent'),
-    mk(1, 'Family', 'Parents', 6000, 'NEED', 'Bank Transfer', 'Family support'),
-    mk(2, 'Financial', 'Loan EMI', 15000, 'NEED', 'Bank Transfer', 'Loan EMI'),
-    mk(3, 'Food', 'Grocery', 700, 'NEED', 'UPI', 'Groceries'),
-    mk(4, 'Transportation', 'Petrol', 300, 'NEED', 'UPI', 'Petrol'),
-    mk(5, 'Personal', 'Mobile', 300, 'NEED', 'UPI', 'Mobile recharge'),
-    mk(5, 'Personal', 'Internet', 300, 'NEED', 'UPI', 'Internet bill'),
-    mk(6, 'Food', 'Tea', 60, 'WANT', 'Cash', 'Tea'),
-    mk(7, 'Food', 'Snacks', 90, 'WANT', 'Cash', 'Snacks'),
-    mk(8, 'Personal', 'Shopping', 1200, 'WANT', 'Credit Card', 'Shopping'),
-    mk(9, 'Financial', 'Savings', 5000, 'NEED', 'Bank Transfer', 'Monthly investment'),
-    mk(10, 'Other', 'UPI', 250, 'WANT', 'UPI', 'Misc UPI spends')
-  ];
-}
-
 /* ---------- Persistence ---------- */
 function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      const s = defaultState();
-      s.transactions = generateDemoTransactions(s);
+      const s = blankState();
       saveState(s);
       return s;
     }
@@ -820,9 +749,7 @@ function loadState() {
     return migrateState(parsed);
   } catch (e) {
     console.error('Failed to load state, resetting.', e);
-    const s = defaultState();
-    s.transactions = generateDemoTransactions(s);
-    return s;
+    return blankState();
   }
 }
 
@@ -836,7 +763,6 @@ function migrateState(s) {
   s.goals = s.goals || d.goals;
   s.debts = s.debts || d.debts;
   s.quickButtons = s.quickButtons || d.quickButtons;
-  s.demoDataActive = s.demoDataActive !== undefined ? s.demoDataActive : d.demoDataActive;
   s.notificationsDismissed = s.notificationsDismissed || [];
   return s;
 }
@@ -854,12 +780,6 @@ function saveState(state) {
 function resetAllData() {
   localStorage.removeItem(STORAGE_KEY);
 }
-
-/* A genuinely empty state for "Reset All Data" — unlike loadState(),
-   this does NOT re-seed the sample transactions/goals/debt/salary.
-   loadState() re-seeds demo data on empty storage on purpose (that's
-   the first-run experience for a brand new install); a user-triggered
-   reset should instead leave a truly blank app. */
 function blankState(preserveTheme) {
   return {
     version: 2,
@@ -881,13 +801,6 @@ function blankState(preserveTheme) {
     demoDataActive: false,
     notificationsDismissed: []
   };
-}
-
-function clearDemoData(state) {
-  state.transactions = state.transactions.filter(t => !t.demo);
-  state.demoDataActive = false;
-  saveState(state);
-  return state;
 }
 
 
@@ -962,6 +875,19 @@ function calculateTotalIncome(txns) {
   return txns.filter(t => t.type === 'income').reduce((s, t) => s + Number(t.amount), 0);
 }
 
+/* Effective income for a cycle: any income transactions you've logged
+   (Salary, Bonus, Other Income, ...) are summed together. If you haven't
+   logged an actual Salary transaction yet, your configured Monthly Salary
+   (Settings) is used as a stand-in for it — but any Bonus/Other Income
+   transactions are always added on top, never replaced by it. */
+function calculateEffectiveIncome(state, txns) {
+  const salaryLogged = txns.filter(t => t.type === 'income' && t.sub === 'Salary')
+    .reduce((s, t) => s + Number(t.amount), 0);
+  const otherIncome = txns.filter(t => t.type === 'income' && t.sub !== 'Salary')
+    .reduce((s, t) => s + Number(t.amount), 0);
+  return (salaryLogged || state.settings.salary) + otherIncome;
+}
+
 function calculateTotalExpenses(txns) {
   return txns.filter(t => t.type === 'expense').reduce((s, t) => s + Number(t.amount), 0);
 }
@@ -1024,7 +950,7 @@ function allBudgetUsage(state, txns) {
 
 /* ---------- Daily spending limit ---------- */
 function calculateFlexibleRemaining(state, txns, cycle) {
-  const income = calculateTotalIncome(txns) || state.settings.salary;
+  const income = calculateEffectiveIncome(state, txns);
   const committed = txns.filter(t => t.type === 'expense' && t.needWant === 'NEED')
     .reduce((s, t) => s + Number(t.amount), 0);
   const savingsTarget = state.budgets['Financial|Savings'] || 0;
@@ -1091,7 +1017,7 @@ function calculateDebtProgress(loan) {
 /* ---------- Financial Health Score (0-100) ----------
    Transparent, simple heuristic — explicitly not professional advice. */
 function calculateFinancialHealthScore(state, txns, cycle) {
-  const income = calculateTotalIncome(txns) || state.settings.salary;
+  const income = calculateEffectiveIncome(state, txns);
   const savings = calculateSavings(txns);
   const debtPay = calculateDebtPayment(txns);
   const essential = calculateEssentialExpenses(txns);
@@ -1129,7 +1055,7 @@ function calculateFinancialHealthScore(state, txns, cycle) {
 
 /* ---------- Tree data ---------- */
 function buildTreeData(state, txns) {
-  const income = calculateTotalIncome(txns) || state.settings.salary;
+  const income = calculateEffectiveIncome(state, txns);
   const totalExpenses = calculateTotalExpenses(txns);
   const nodes = Object.entries(state.categories)
     .filter(([main]) => main !== 'Income')
@@ -1170,7 +1096,7 @@ function generateNotifications(state, txns, cycle) {
       notes.push({ id: 'warn_' + u.key, type: 'warning', text: `${u.sub} has consumed ${fmtPct(u.pct, 0)} of its budget.` });
     }
   });
-  const income = calculateTotalIncome(txns) || state.settings.salary;
+  const income = calculateEffectiveIncome(state, txns);
   const expenses = calculateTotalExpenses(txns);
   const remaining = calculateRemainingBalance(income, expenses);
   notes.push({ id: 'remaining', type: 'info', text: `You have ${fmtINR(remaining)} available until your next salary cycle.` });
@@ -1198,7 +1124,7 @@ function getMonthlySummaries(state, count) {
     while (m > 12) { m -= 12; y++; }
     const cycle = getCurrentCycle({ settings: Object.assign({}, state.settings, { cycleMonth: m, cycleYear: y }) });
     const txns = getCycleTransactions(state, cycle);
-    const income = calculateTotalIncome(txns);
+    const income = (i === 0) ? calculateEffectiveIncome(state, txns) : calculateTotalIncome(txns);
     const expenses = calculateTotalExpenses(txns);
     const savings = calculateSavings(txns);
     const debt = calculateDebtPayment(txns);
@@ -1206,7 +1132,7 @@ function getMonthlySummaries(state, count) {
       label: cycle.startDate.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' }),
       month: m, year: y, income, expenses, savings, debt,
       remaining: income - expenses,
-      savingsRate: calculateSavingsRate(savings, income || state.settings.salary)
+      savingsRate: calculateSavingsRate(savings, income)
     });
   }
   return summaries;
@@ -1379,7 +1305,7 @@ function utf8ToBase64(str) {
 async function exportToExcel(state) {
   const cycle = getCurrentCycle(state);
   const txns = getCycleTransactions(state, cycle);
-  const income = calculateTotalIncome(txns) || state.settings.salary;
+  const income = calculateEffectiveIncome(state, txns);
   const expenses = calculateTotalExpenses(txns);
   const savings = calculateSavings(txns);
   const debt = calculateDebtPayment(txns);
@@ -1647,7 +1573,7 @@ function applyTheme() {
 function renderDashboard() {
   const cycle = getCurrentCycle(state);
   const txns = getCycleTransactions(state, cycle);
-  const income = calculateTotalIncome(txns) || state.settings.salary;
+  const income = calculateEffectiveIncome(state, txns);
   const expenses = calculateTotalExpenses(txns);
   const fixed = txns.filter(t => t.type === 'expense' && t.needWant === 'NEED').reduce((s, t) => s + Number(t.amount), 0);
   const variable = txns.filter(t => t.type === 'expense' && t.needWant === 'WANT').reduce((s, t) => s + Number(t.amount), 0);
@@ -2072,11 +1998,10 @@ function renderBudgetPage() {
   });
 
   // budget plan presets
-  document.getElementById('budgetPlanOutput').innerHTML = renderBudgetPlans();
+  document.getElementById('budgetPlanOutput').innerHTML = renderBudgetPlans(calculateEffectiveIncome(state, txns));
 }
 
-function renderBudgetPlans() {
-  const income = state.settings.salary;
+function renderBudgetPlans(income) {
   const plans = [
     { name: 'Balanced Plan', needs: 70, wants: 15, savings: 15 },
     { name: 'Aggressive Saving Plan', needs: 70, wants: 10, savings: 20 },
@@ -2356,7 +2281,7 @@ function renderReportsPage() {
   const txns = getCycleTransactions(state, cycle);
   const summaries = getMonthlySummaries(state, 6);
 
-  const income = calculateTotalIncome(txns) || state.settings.salary;
+  const income = calculateEffectiveIncome(state, txns);
   const expenses = calculateTotalExpenses(txns);
   document.getElementById('reportTotals').innerHTML = `
     <div class="report-grid">
@@ -2426,13 +2351,6 @@ function renderExcelPage() {
     renderAll();
     toast('All data has been reset. Set your salary in Settings to get started.');
   };
-  document.getElementById('btnClearDemo').onclick = () => {
-    if (!confirm('Remove all demo/sample transactions?')) return;
-    clearDemoData(state);
-    renderAll();
-    toast('Demo data cleared.');
-  };
-  document.getElementById('demoNotice').style.display = state.demoDataActive ? 'flex' : 'none';
 }
 
 async function doExportExcel() {
@@ -2580,7 +2498,7 @@ function onSubmitSalaryDay(e) {
 function openAffordModal() {
   const cycle = getCurrentCycle(state);
   const txns = getCycleTransactions(state, cycle);
-  const income = calculateTotalIncome(txns) || state.settings.salary;
+  const income = calculateEffectiveIncome(state, txns);
   const expenses = calculateTotalExpenses(txns);
   const available = Math.max(0, income - expenses);
   document.getElementById('affordAvailable').value = available;
