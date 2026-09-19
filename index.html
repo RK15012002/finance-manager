@@ -335,6 +335,7 @@ table.data-table td.num { text-align: right; font-weight: 600; }
     <button class="nav-item" data-page="tree"><span class="nav-icon">🌳</span> Expense Tree</button>
     <button class="nav-item" data-page="transactions"><span class="nav-icon">📋</span> Transactions</button>
     <button class="nav-item" data-page="budget"><span class="nav-icon">💰</span> Budget</button>
+    <button class="nav-item" data-page="insights"><span class="nav-icon">🩺</span> Financial Health</button>
     <button class="nav-item" data-page="goals"><span class="nav-icon">🎯</span> Goals</button>
     <button class="nav-item" data-page="debt"><span class="nav-icon">💳</span> Debt</button>
     <button class="nav-item" data-page="reports"><span class="nav-icon">📊</span> Reports</button>
@@ -352,6 +353,7 @@ table.data-table td.num { text-align: right; font-weight: 600; }
         <button id="cyclePrev">‹</button>
         <span id="cycleLabel">—</span>
         <button id="cycleNext">›</button>
+        <button id="cycleToday" title="Jump back to the current salary cycle" style="font-size:12px;">Today</button>
       </div>
       <button class="icon-btn" id="themeToggle" title="Toggle theme">🌙</button>
     </header>
@@ -375,21 +377,7 @@ table.data-table td.num { text-align: right; font-weight: 600; }
           <h3>🌳 Where Is My Money Going?</h3>
           <div id="dashTree"></div>
         </div>
-        <div class="grid" style="grid-template-columns:1fr; align-content:start;">
-          <div class="card"><h3>Current Salary Cycle</h3><div id="cycleDetail"></div></div>
-          <div class="card"><h3>Financial Health</h3><div id="healthScore"></div></div>
-        </div>
-      </div>
-
-      <div class="grid grid-2" style="margin-top:14px;">
-        <div class="card">
-          <h3>Today's Safe Spending</h3>
-          <div id="dailySpend"></div>
-        </div>
-        <div class="card">
-          <h3>Budget Status</h3>
-          <div id="budgetStatusList"></div>
-        </div>
+        <div class="card"><h3>Current Salary Cycle</h3><div id="cycleDetail"></div></div>
       </div>
 
       <div class="card" style="margin-top:14px;">
@@ -465,6 +453,25 @@ table.data-table td.num { text-align: right; font-weight: 600; }
           <p class="hint">Based on your current salary. Percentages are a guide, not a rule.</p>
           <div id="budgetPlanOutput"></div>
         </div>
+      </div>
+    </section>
+
+    <!-- ---------------- INSIGHTS (Financial Health / Safe Spending / Budget Status) ---------------- -->
+    <section class="page" id="page-insights">
+      <div class="page-header"><h2>🩺 Financial Health</h2></div>
+      <div class="grid grid-2">
+        <div class="card">
+          <h3>Financial Health</h3>
+          <div id="healthScore"></div>
+        </div>
+        <div class="card">
+          <h3>Today's Safe Spending</h3>
+          <div id="dailySpend"></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3>Budget Status</h3>
+        <div id="budgetStatusList"></div>
       </div>
     </section>
 
@@ -601,7 +608,7 @@ table.data-table td.num { text-align: right; font-weight: 600; }
       <div class="form-field" id="needWantField"><label>Need / Want</label>
         <select id="expenseNeedWant"><option value="NEED">NEED</option><option value="WANT">WANT</option></select>
       </div>
-      <div class="form-field full"><label>Description</label><input type="text" id="expenseDescription" placeholder="e.g. Grocery run" /></div>
+      <div class="form-field full"><label id="expenseDescriptionLabel">Description</label><input type="text" id="expenseDescription" placeholder="e.g. Grocery run" /></div>
       <div class="form-field full checkbox-field"><input type="checkbox" id="expenseRecurring" /><label id="expenseRecurringLabel">Recurring expense</label></div>
       <div class="form-field full"><label>Notes</label><textarea id="expenseNotes"></textarea></div>
       <div class="btn-row"><button type="submit" class="btn-primary" id="expenseSaveBtn">Save Expense</button><button type="button" class="btn-secondary" data-close-modal>Cancel</button></div>
@@ -705,7 +712,7 @@ const STORAGE_KEY = 'pfm_state_v2';
    Each subcategory can optionally carry a default monthly budget
    (used only to seed the Budget page — everything editable). */
 const DEFAULT_CATEGORIES = {
-  Income: { icon: '💵', subs: { Salary: 0, Bonus: 0, 'Other Income': 0 } },
+  Income: { icon: '💵', subs: { Salary: 0, Bonus: 0, 'Company Expense': 0, 'Other Income': 0 } },
   Housing: { icon: '🏠', subs: { Rent: 5500, Electricity: 0, Water: 0, Maintenance: 0, Other: 0 } },
   Food: { icon: '🍛', subs: { Grocery: 1000, Restaurant: 0, Tea: 300, Snacks: 700, 'Food Delivery': 0 } },
   Transportation: { icon: '🛵', subs: { Petrol: 500, 'Public Transport': 0, Cab: 0, 'Vehicle Maintenance': 0, Other: 0 } },
@@ -831,6 +838,11 @@ function migrateState(s) {
   // shallow-merge to guarantee new fields exist on old saves
   s.settings = Object.assign({}, d.settings, s.settings || {});
   s.categories = s.categories || d.categories;
+  // Older saves won't have the "Company Expense" income subcategory —
+  // add it in without touching any categories the user has customized.
+  if (s.categories.Income && s.categories.Income.subs && !('Company Expense' in s.categories.Income.subs)) {
+    s.categories.Income.subs['Company Expense'] = 0;
+  }
   s.budgets = s.budgets || d.budgets;
   s.transactions = s.transactions || [];
   s.goals = s.goals || d.goals;
@@ -838,7 +850,29 @@ function migrateState(s) {
   s.quickButtons = s.quickButtons || d.quickButtons;
   s.demoDataActive = s.demoDataActive !== undefined ? s.demoDataActive : d.demoDataActive;
   s.notificationsDismissed = s.notificationsDismissed || [];
+  // The salary cycle pointer (cycleMonth/cycleYear) is saved in state and,
+  // unlike a live "today" check, never advances on its own. If the app
+  // wasn't opened around the last salary date, the Dashboard would keep
+  // showing an old cycle's income/expenses ("last income") instead of the
+  // current one. Snap it back to whichever cycle actually contains today.
+  syncCycleToToday(s);
   return s;
+}
+
+/* Recompute which salary cycle "today" falls into and pin the state to it.
+   Called whenever a saved state is loaded so the Dashboard always opens on
+   the real current cycle rather than whatever cycle was last viewed. */
+function syncCycleToToday(state) {
+  const today = new Date();
+  const salaryDate = state.settings.salaryDate || 1;
+  let month = today.getMonth() + 1; // 1-indexed
+  let year = today.getFullYear();
+  if (today.getDate() < salaryDate) {
+    month -= 1;
+    if (month < 1) { month = 12; year -= 1; }
+  }
+  state.settings.cycleMonth = month;
+  state.settings.cycleYear = year;
 }
 
 function saveState(state) {
@@ -1609,6 +1643,7 @@ function renderPage(page) {
   else if (page === 'tree') renderTreePage();
   else if (page === 'transactions') renderTransactionsPage();
   else if (page === 'budget') renderBudgetPage();
+  else if (page === 'insights') renderInsightsPage();
   else if (page === 'goals') renderGoalsPage();
   else if (page === 'debt') renderDebtPage();
   else if (page === 'reports') renderReportsPage();
@@ -1627,6 +1662,7 @@ function wireGlobalActions() {
   });
   document.getElementById('cyclePrev').addEventListener('click', () => { shiftCycle(state, -1); persist(); renderAll(); });
   document.getElementById('cycleNext').addEventListener('click', () => { shiftCycle(state, 1); persist(); renderAll(); });
+  document.getElementById('cycleToday').addEventListener('click', () => { syncCycleToToday(state); persist(); renderAll(); });
   document.getElementById('fabAddExpense').addEventListener('click', () => openExpenseModal(null, 'expense'));
   document.getElementById('fabAddIncome').addEventListener('click', () => openExpenseModal(null, 'income'));
   document.querySelectorAll('#expenseTypeToggle button').forEach(btn => {
@@ -1656,12 +1692,11 @@ function renderDashboard() {
   const remaining = calculateRemainingBalance(income, expenses);
   const savingsRate = calculateSavingsRate(savings, income);
   const debtRemainingTotal = state.debts.filter(d => d.type !== 'lend').reduce((s, d) => s + calculateDebtProgress(d).remainingAmount, 0);
-  const health = calculateFinancialHealthScore(state, txns, cycle);
 
   document.getElementById('cycleLabel').textContent = cycle.label;
 
   const cards = [
-    ['Monthly Salary', fmtINR(income), '💵'],
+    ['Total Income (This Cycle)', fmtINR(income), '💵'],
     ['Total Fixed Expenses', fmtINR(fixed), '📌'],
     ['Total Variable Expenses', fmtINR(variable), '🎈'],
     ['Loan / EMI', fmtINR(debtPay), '💳'],
@@ -1681,12 +1716,41 @@ function renderDashboard() {
   // Salary cycle detail card
   document.getElementById('cycleDetail').innerHTML = `
     <div class="cycle-row"><span>Starting Balance</span><strong>${fmtINR(0)}</strong></div>
-    <div class="cycle-row"><span>Salary Received</span><strong>${fmtINR(income)}</strong></div>
+    <div class="cycle-row"><span>Income Received</span><strong>${fmtINR(income)}</strong></div>
+    <div class="cycle-row"><span>Configured Monthly Salary</span><strong>${fmtINR(state.settings.salary)}</strong></div>
     <div class="cycle-row"><span>Expenses</span><strong>${fmtINR(expenses)}</strong></div>
     <div class="cycle-row"><span>Savings</span><strong>${fmtINR(savings)}</strong></div>
     <div class="cycle-row"><span>EMI</span><strong>${fmtINR(debtPay)}</strong></div>
     <div class="cycle-row total"><span>Remaining Balance</span><strong>${fmtINR(remaining)}</strong></div>
   `;
+
+  // Mini tree
+  document.getElementById('dashTree').innerHTML = renderTreeHTML(buildTreeData(state, txns), true);
+
+  // Quick add buttons
+  document.getElementById('quickButtons').innerHTML = state.quickButtons.map((q, i) => `
+    <button class="quick-btn" data-idx="${i}">+ ${q.label} ${fmtINR(q.amount)}</button>`).join('') +
+    `<button class="quick-btn quick-custom" id="quickCustomBtn">+ Custom</button>`;
+  document.querySelectorAll('.quick-btn[data-idx]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const q = state.quickButtons[Number(btn.dataset.idx)];
+      addQuickTransaction(q);
+    });
+  });
+  document.getElementById('quickCustomBtn').addEventListener('click', () => openExpenseModal());
+
+  document.getElementById('btnExportExcelDash').onclick = () => doExportExcel();
+  document.getElementById('btnBackupDash').onclick = () => backupToJSON(state);
+}
+
+/* ================================================================
+   INSIGHTS (Financial Health / Today's Safe Spending / Budget Status)
+   Moved off the Dashboard into their own tab.
+   ================================================================ */
+function renderInsightsPage() {
+  const cycle = getCurrentCycle(state);
+  const txns = getCycleTransactions(state, cycle);
+  const health = calculateFinancialHealthScore(state, txns, cycle);
 
   // Financial health
   document.getElementById('healthScore').innerHTML = `
@@ -1695,9 +1759,6 @@ function renderDashboard() {
     <p class="health-msg">${health.message}</p>
     <p class="health-disclaimer">This score is a simple self-assessment tool, not professional financial advice.</p>
   `;
-
-  // Mini tree
-  document.getElementById('dashTree').innerHTML = renderTreeHTML(buildTreeData(state, txns), true);
 
   // Daily spending
   const dailyLimit = calculateDailyLimit(state, txns, cycle);
@@ -1715,23 +1776,8 @@ function renderDashboard() {
   `;
 
   // Budget status bars
-  const usage = allBudgetUsage(state, txns).filter(u => u.budget > 0).sort((a, b) => b.pct - a.pct).slice(0, 6);
+  const usage = allBudgetUsage(state, txns).filter(u => u.budget > 0).sort((a, b) => b.pct - a.pct);
   document.getElementById('budgetStatusList').innerHTML = usage.map(u => budgetBarHTML(u)).join('') || '<p class="empty">No budgets set yet. Add some in the Budget tab.</p>';
-
-  // Quick add buttons
-  document.getElementById('quickButtons').innerHTML = state.quickButtons.map((q, i) => `
-    <button class="quick-btn" data-idx="${i}">+ ${q.label} ${fmtINR(q.amount)}</button>`).join('') +
-    `<button class="quick-btn quick-custom" id="quickCustomBtn">+ Custom</button>`;
-  document.querySelectorAll('.quick-btn[data-idx]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const q = state.quickButtons[Number(btn.dataset.idx)];
-      addQuickTransaction(q);
-    });
-  });
-  document.getElementById('quickCustomBtn').addEventListener('click', () => openExpenseModal());
-
-  document.getElementById('btnExportExcelDash').onclick = () => doExportExcel();
-  document.getElementById('btnBackupDash').onclick = () => backupToJSON(state);
 }
 
 function budgetBarHTML(u) {
@@ -1841,6 +1887,7 @@ function wireTreeToggles() {
 function wireModals() {
   document.getElementById('expenseForm').addEventListener('submit', onSubmitExpense);
   document.getElementById('expenseMain').addEventListener('change', populateSubcategoryOptions);
+  document.getElementById('expenseSub').addEventListener('change', updateDescriptionFieldForSelection);
   document.querySelectorAll('[data-close-modal]').forEach(btn => btn.addEventListener('click', closeAllModals));
   document.querySelectorAll('.modal-backdrop').forEach(bg => bg.addEventListener('click', (e) => { if (e.target === bg) closeAllModals(); }));
 
@@ -1861,6 +1908,25 @@ function populateSubcategoryOptions() {
   const sel = document.getElementById('expenseSub');
   const def = state.categories[main];
   sel.innerHTML = def ? Object.keys(def.subs).map(s => `<option value="${s}">${s}</option>`).join('') : '';
+  updateDescriptionFieldForSelection();
+}
+
+/* "Other Income" has no fixed meaning on its own, so require the user to
+   type what it actually is (e.g. Freelance, Gift, Cashback, Refund). */
+function updateDescriptionFieldForSelection() {
+  const main = document.getElementById('expenseMain').value;
+  const sub = document.getElementById('expenseSub').value;
+  const label = document.getElementById('expenseDescriptionLabel');
+  const input = document.getElementById('expenseDescription');
+  if (main === 'Income' && sub === 'Other Income') {
+    label.textContent = 'Specify Income Source (required)';
+    input.placeholder = 'e.g. Freelance, Gift, Cashback, Refund';
+    input.required = true;
+  } else {
+    label.textContent = 'Description';
+    input.placeholder = 'e.g. Grocery run';
+    input.required = false;
+  }
 }
 
 function setExpenseModalType(type) {
@@ -1897,6 +1963,7 @@ function openExpenseModal(existing, forceType) {
     document.getElementById('expenseMain').value = existing.main;
     populateSubcategoryOptions();
     document.getElementById('expenseSub').value = existing.sub;
+    updateDescriptionFieldForSelection();
     document.getElementById('expensePaymentMethod').value = existing.paymentMethod;
     document.getElementById('expenseDescription').value = existing.description;
     if (existing.needWant) document.getElementById('expenseNeedWant').value = existing.needWant;
@@ -1916,6 +1983,9 @@ function onSubmitExpense(e) {
   const sub = document.getElementById('expenseSub').value;
   if (!main || !sub) { toast('Please choose a category.'); return; }
   const type = e.target.dataset.type === 'income' ? 'income' : 'expense';
+  if (main === 'Income' && sub === 'Other Income' && !document.getElementById('expenseDescription').value.trim()) {
+    toast('Please specify what this "Other Income" is.'); return;
+  }
 
   const editId = e.target.dataset.editId;
   const payload = {
